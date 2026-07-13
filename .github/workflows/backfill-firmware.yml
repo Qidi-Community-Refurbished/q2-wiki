@@ -1,3 +1,5 @@
+name: Backfill Firmware Releases
+
 on:
   workflow_dispatch:
 
@@ -16,18 +18,12 @@ jobs:
         run: |
           # Known Q2 firmware versions to attempt, oldest to newest
           VERSIONS=(
-            "V1.0.8"
+            "V1.0.9"
             "V1.1.0"
             "V1.1.1"
             "V01.01.02.01"
             "V01.01.02.02"
             "V01.01.02.03"
-          )
-
-          # Map our version tags to QIDITECH/QIDI_Q2's release tags, where known
-          declare -A QIDITECH_TAG=(
-            ["V1.1.0"]="Q2_V1.1.0"
-            ["V1.1.1"]="Q2_V1.1.1"
           )
 
           for VERSION in "${VERSIONS[@]}"; do
@@ -40,29 +36,54 @@ jobs:
             fi
 
             DOWNLOADED=false
+            FIRMWARE_FILE="firmware_${VERSION}.zip"
 
             # Strategy 1: Try QIDITECH's official GitHub release assets
-            QIDITECH_RELEASE_TAG="${QIDITECH_TAG[$VERSION]:-}"
-            if [ -n "$QIDITECH_RELEASE_TAG" ]; then
-              GITHUB_URL="https://github.com/QIDITECH/QIDI_Q2/releases/download/${QIDITECH_RELEASE_TAG}/${QIDITECH_RELEASE_TAG}.zip"
-              echo "Trying QIDITECH/QIDI_Q2 GitHub release: $GITHUB_URL"
-              if wget -q "$GITHUB_URL" -O firmware.zip && [ -s firmware.zip ]; then
+            echo "Trying QIDITECH/QIDI_Q2 GitHub release for $VERSION..."
+            ASSET_URL=$(gh release view "$VERSION" \
+              --repo QIDITECH/QIDI_Q2 \
+              --json assets \
+              --jq '.assets[] | select(.name | startswith("Q2")) | .url' 2>/dev/null | head -1)
+
+            if [ -n "$ASSET_URL" ]; then
+              echo "Found asset at $ASSET_URL"
+              if wget -q "$ASSET_URL" -O "$FIRMWARE_FILE" && [ -s "$FIRMWARE_FILE" ]; then
                 echo "Downloaded from QIDITECH GitHub"
                 DOWNLOADED=true
               else
-                rm -f firmware.zip
+                rm -f "$FIRMWARE_FILE"
               fi
             fi
 
-            # Strategy 2: Try QIDI's AWS download server
+            # Strategy 2: Try qidi-community/q2-wiki GitHub release assets
+            if [ "$DOWNLOADED" = "false" ]; then
+              echo "Trying qidi-community/q2-wiki GitHub release for $VERSION..."
+              ASSET_URL=$(gh release view "$VERSION" \
+                --repo qidi-community/q2-wiki \
+                --json assets \
+                --jq '.assets[] | select(.name | endswith(".zip")) | .url' 2>/dev/null | head -1)
+
+              if [ -n "$ASSET_URL" ]; then
+                echo "Found asset at $ASSET_URL"
+                if wget -q "$ASSET_URL" -O "$FIRMWARE_FILE" && [ -s "$FIRMWARE_FILE" ]; then
+                  echo "Downloaded from qidi-community GitHub"
+                  DOWNLOADED=true
+                else
+                  rm -f "$FIRMWARE_FILE"
+                fi
+              fi
+            fi
+
+            # Strategy 3: Try QIDI's AWS download server
             if [ "$DOWNLOADED" = "false" ]; then
               AWS_URL="https://download_aws.qidi3dprinter.com/QD_Q2/Q2_${VERSION}.zip"
               echo "Trying QIDI AWS: $AWS_URL"
-              if wget -q "$AWS_URL" -O firmware.zip && [ -s firmware.zip ]; then
+              HTTP_STATUS=$(wget -q --server-response "$AWS_URL" -O "$FIRMWARE_FILE" 2>&1 | grep "HTTP/" | tail -1 | awk '{print $2}')
+              if [ "$HTTP_STATUS" = "200" ] && [ -s "$FIRMWARE_FILE" ]; then
                 echo "Downloaded from QIDI AWS"
                 DOWNLOADED=true
               else
-                rm -f firmware.zip
+                rm -f "$FIRMWARE_FILE"
               fi
             fi
 
@@ -73,11 +94,11 @@ jobs:
 
             # Create the release
             echo "Creating release for $VERSION..."
-            gh release create "$VERSION" firmware.zip \
+            gh release create "$VERSION" "$FIRMWARE_FILE" \
               --title "Firmware $VERSION" \
-              --notes "$(printf 'Firmware version %s for the QIDI Q2.\n\n---\n\n**Note:** The firmware.zip file is the property of QIDI Tech. Copyright © 2025 QIDI Tech All Rights Reserved.\n\nThis repository only automates the distribution of official firmware releases.' "$VERSION")"
+              --notes "$(printf 'Firmware version %s for the QIDI Q2.\n\n---\n\n**Note:** The firmware.zip file is the property of QIDI Tech. Copyright © QIDI Tech All Rights Reserved.\n\nThis repository only automates the distribution of official firmware releases.' "$VERSION")"
 
-            rm -f firmware.zip
+            rm -f "$FIRMWARE_FILE"
             echo "Release $VERSION created successfully"
           done
 
