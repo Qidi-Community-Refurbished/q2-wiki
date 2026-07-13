@@ -1,0 +1,84 @@
+on:
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Backfill known firmware versions
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Known Q2 firmware versions to attempt, oldest to newest
+          VERSIONS=(
+            "V1.0.8"
+            "V1.1.0"
+            "V1.1.1"
+            "V01.01.02.01"
+            "V01.01.02.02"
+            "V01.01.02.03"
+          )
+
+          # Map our version tags to QIDITECH/QIDI_Q2's release tags, where known
+          declare -A QIDITECH_TAG=(
+            ["V1.1.0"]="Q2_V1.1.0"
+            ["V1.1.1"]="Q2_V1.1.1"
+          )
+
+          for VERSION in "${VERSIONS[@]}"; do
+            echo "=== Checking $VERSION ==="
+
+            # Skip if release already exists in this repo
+            if gh release view "$VERSION" >/dev/null 2>&1; then
+              echo "Release $VERSION already exists — skipping"
+              continue
+            fi
+
+            DOWNLOADED=false
+
+            # Strategy 1: Try QIDITECH's official GitHub release assets
+            QIDITECH_RELEASE_TAG="${QIDITECH_TAG[$VERSION]:-}"
+            if [ -n "$QIDITECH_RELEASE_TAG" ]; then
+              GITHUB_URL="https://github.com/QIDITECH/QIDI_Q2/releases/download/${QIDITECH_RELEASE_TAG}/${QIDITECH_RELEASE_TAG}.zip"
+              echo "Trying QIDITECH/QIDI_Q2 GitHub release: $GITHUB_URL"
+              if wget -q "$GITHUB_URL" -O firmware.zip && [ -s firmware.zip ]; then
+                echo "Downloaded from QIDITECH GitHub"
+                DOWNLOADED=true
+              else
+                rm -f firmware.zip
+              fi
+            fi
+
+            # Strategy 2: Try QIDI's AWS download server
+            if [ "$DOWNLOADED" = "false" ]; then
+              AWS_URL="https://download_aws.qidi3dprinter.com/QD_Q2/Q2_${VERSION}.zip"
+              echo "Trying QIDI AWS: $AWS_URL"
+              if wget -q "$AWS_URL" -O firmware.zip && [ -s firmware.zip ]; then
+                echo "Downloaded from QIDI AWS"
+                DOWNLOADED=true
+              else
+                rm -f firmware.zip
+              fi
+            fi
+
+            if [ "$DOWNLOADED" = "false" ]; then
+              echo "Could not download $VERSION from any source — skipping"
+              continue
+            fi
+
+            # Create the release
+            echo "Creating release for $VERSION..."
+            gh release create "$VERSION" firmware.zip \
+              --title "Firmware $VERSION" \
+              --notes "$(printf 'Firmware version %s for the QIDI Q2.\n\n---\n\n**Note:** The firmware.zip file is the property of QIDI Tech. Copyright © 2025 QIDI Tech All Rights Reserved.\n\nThis repository only automates the distribution of official firmware releases.' "$VERSION")"
+
+            rm -f firmware.zip
+            echo "Release $VERSION created successfully"
+          done
+
+          echo "=== Backfill complete ==="
