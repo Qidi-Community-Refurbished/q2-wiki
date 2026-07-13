@@ -8,7 +8,7 @@ Use a command line interface, like Windows terminal or [Tabby](tabby.sh) to ssh 
 
 There are two user and password combos as of 01.01.02.01 firmware update. This update and all after have the option of both users, while 1.1.1 and down only have `mks`
 
-| User | Password |
-|______|__________|
-|mks   | makerbase|
-|qidi  | qiditech |
+|User|Password|
+|---|---|
+|mks|makerbase|
+|qidi|qiditech|
