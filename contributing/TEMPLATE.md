@@ -20,11 +20,11 @@
 
 ---
 
-## Alternate Template: Reference / List Docs
+## Alternate Template: Catalog / List Docs
 
-<Use this structure instead of the one above for docs that catalog several options (e.g. a list of upgrade parts) rather than walking through a single fix/mod install. Delete whichever template you didn't use.>
+Use this structure instead of the one above for docs that catalog several options (e.g. a list of upgrade parts) rather than walking through a single fix/mod install. Delete whichever template you didn't use.
 
-```
+```markdown
 # <Title>
 
 <1-2 sentence intro — what this list covers and how it's organized.>
@@ -33,18 +33,9 @@
 
 ### <Item Name>
 
-<Short description of the item/option.>
+<Prose description of the item. Embed product or model links naturally in the text rather than using callout blocks. If there are community notes or caveats, write them as a follow-up sentence or paragraph. If input is still needed from the community, say so in plain text.>
 
-> [!TIP]
-> <Recommended product/link and why it's recommended.>
+### <Item Name>
 
-> [!NOTE]
-> <Supplementary info, or a credited community quote/explanation.>
-
-> [!IMPORTANT]
-> <Open gap needing community input, or an unconfirmed/pending item.>
-
-## Related
-
-<Optional — outside links (Discord threads, forums, videos).>
+<Repeat for each item.>
 ```

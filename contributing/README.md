@@ -37,7 +37,8 @@ If you can't write the doc yourself, open an issue describing the fix or mod, an
 Start from [`TEMPLATE.md`](./TEMPLATE.md) — it also includes an alternate structure for catalog/list-style docs (e.g. a list of upgrade options) that don't fit the single fix/mod flow. Style rules pulled from existing docs:
 
 - H1 = title, H2 = major sections, H3 = sub-steps.
-- Use GitHub admonitions for callouts, not bold text: `> [!NOTE]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!TIP]`.
+- **Fix/mod docs:** Use GitHub admonitions for callouts (`> [!NOTE]`, `> [!TIP]`, `> [!WARNING]`, `> [!IMPORTANT]`), not bold text.
+- **Catalog/list docs:** Use plain prose instead of admonition blocks. Embed links naturally in sentences. Write community notes and caveats as follow-up paragraphs.
 - Put code/config in fenced blocks with a language hint (e.g. ` ```ini `, ` ```gcode `).
 - Put images in an `images/` subfolder next to the doc if needed; link to videos rather than embedding them.
 - If adapting someone else's fix, credit and link the original source (matches the existing pattern of citing outside sources like YouTube/Odysee links).
