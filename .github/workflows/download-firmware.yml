@@ -12,10 +12,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch all released firmware versions from qidimaker.com
+      - name: Fetch released firmware versions from qidimaker.com
         run: |
           RESPONSE=$(curl -sf -X POST \
             -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
             -d '{"hardwareModel":"QD_Q2","operatingSystem":"3DPrinter","isReleased":true,"pageNum":1,"pageSize":20}' \
             https://www.qidimaker.com/backend/v1/fireware/version/released)
 
@@ -26,63 +27,50 @@ jobs:
 
           echo "FIRMWARE_LIST=$RESPONSE" >> $GITHUB_ENV
 
-      - name: Process and release new firmware versions
+      - name: Create releases for new firmware versions
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "$FIRMWARE_LIST" | python3 - << 'PYEOF'
-          import json, os, subprocess, sys, urllib.request, tempfile
+          python3 << 'PYEOF'
+          import json, os, subprocess, sys, urllib.request
 
           data = json.loads(os.environ["FIRMWARE_LIST"])
-
-          # Adjust this path based on actual API response shape
-          records = data.get("data", {}).get("records", []) or data.get("data", []) or []
+          records = data.get("data", {}).get("records", [])
 
           if not records:
-              print("No firmware records found in response")
-              print("Raw response:", json.dumps(data, indent=2))
+              print("No firmware records found")
               sys.exit(1)
 
           for record in records:
-              version = record.get("versionCode") or record.get("version") or record.get("versionName")
-              download_url = record.get("downloadUrl") or record.get("fileUrl") or record.get("url")
-              description = (
-                  record.get("description", {}).get("en_US")
-                  or record.get("desc")
-                  or "Firmware update for QIDI Q2"
-              )
+              version    = record["versionCode"]
+              file_url   = record["fileUrl"]
+              content    = record.get("content", "")
 
-              if not version or not download_url:
-                  print(f"Skipping record missing version or URL: {record}")
-                  continue
+              print(f"=== Checking V{version} ===")
 
-              print(f"=== Checking {version} ===")
+              tag = f"V{version}"
 
-              # Check if release already exists
-              result = subprocess.run(
-                  ["gh", "release", "view", version],
-                  capture_output=True
-              )
+              # Skip if release already exists
+              result = subprocess.run(["gh", "release", "view", tag], capture_output=True)
               if result.returncode == 0:
-                  print(f"Release {version} already exists — skipping")
+                  print(f"Release {tag} already exists — skipping")
                   continue
 
               # Download firmware
-              print(f"Downloading {version} from {download_url}")
+              print(f"Downloading {tag} from {file_url}")
               firmware_file = f"firmware_{version}.zip"
               try:
-                  urllib.request.urlretrieve(download_url, firmware_file)
+                  urllib.request.urlretrieve(file_url, firmware_file)
               except Exception as e:
-                  print(f"Failed to download {version}: {e}")
+                  print(f"Failed to download {tag}: {e}")
                   continue
 
               if not os.path.exists(firmware_file) or os.path.getsize(firmware_file) == 0:
-                  print(f"Downloaded file is empty for {version}")
+                  print(f"Downloaded file is empty for {tag} — skipping")
                   continue
 
-              # Create release
               notes = (
-                  f"{description}\n\n"
+                  f"{content}\n\n"
                   "---\n\n"
                   "**Note:** The firmware.zip file is the property of QIDI Tech. "
                   "Copyright © QIDI Tech All Rights Reserved.\n\n"
@@ -90,15 +78,16 @@ jobs:
               )
 
               result = subprocess.run(
-                  ["gh", "release", "create", version, firmware_file,
-                   "--title", f"Firmware {version}",
+                  ["gh", "release", "create", tag, firmware_file,
+                   "--title", f"Firmware {tag}",
                    "--notes", notes],
                   capture_output=True, text=True
               )
+
               if result.returncode == 0:
-                  print(f"Release {version} created successfully")
+                  print(f"Release {tag} created successfully")
               else:
-                  print(f"Failed to create release {version}: {result.stderr}")
+                  print(f"Failed to create release {tag}: {result.stderr}")
 
               os.remove(firmware_file)
 
