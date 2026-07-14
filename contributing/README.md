@@ -34,7 +34,7 @@ If you can't write the doc yourself, open an issue describing the fix or mod, an
 
 ## Writing the Doc
 
-Start from [`TEMPLATE.md`](./TEMPLATE.md). Style rules pulled from existing docs:
+Start from [`TEMPLATE.md`](./TEMPLATE.md) — it also includes an alternate structure for catalog/list-style docs (e.g. a list of upgrade options) that don't fit the single fix/mod flow. Style rules pulled from existing docs:
 
 - H1 = title, H2 = major sections, H3 = sub-steps.
 - Use GitHub admonitions for callouts, not bold text: `> [!NOTE]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!TIP]`.
