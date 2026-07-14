@@ -12,73 +12,94 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get latest available version
+      - name: Fetch all released firmware versions from qidimaker.com
         run: |
-          INFO=$(curl -s https://api.qidi3dprinter.com/code/x_q_2_version_info)
-          if [ -z "$INFO" ]; then
-            echo "Failed to fetch version info"
+          RESPONSE=$(curl -sf -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"hardwareModel":"QD_Q2","operatingSystem":"3DPrinter","isReleased":true,"pageNum":1,"pageSize":20}' \
+            https://www.qidimaker.com/backend/v1/fireware/version/released)
+
+          if [ -z "$RESPONSE" ]; then
+            echo "Failed to fetch firmware list from qidimaker.com"
             exit 1
           fi
-          # Sanitize JSON by removing tabs and newlines for environment variable
-          INFO_SANITIZED=$(echo "$INFO" | tr -d '\t\n\r')
-          echo "INFO=$INFO_SANITIZED" >> $GITHUB_ENV
 
-      - name: Check if release exists
-        id: check_release
+          echo "FIRMWARE_LIST=$RESPONSE" >> $GITHUB_ENV
+
+      - name: Process and release new firmware versions
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(echo "$INFO" | jq -r '.firmware.version')
-          DESCRIPTION=$(echo "$INFO" | jq -r '.firmware.description.en_US')
-          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
-            echo "Failed to extract version from API response"
-            exit 1
-          fi
-          if [ -z "$DESCRIPTION" ] || [ "$DESCRIPTION" = "null" ]; then
-            DESCRIPTION="Firmware update for QIDI 3D printer"
-          fi
-          
-          # Check if release already exists
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "Release $VERSION already exists"
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Release $VERSION does not exist"
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          {
-            echo "DESCRIPTION<<__EOF__"
-            echo "$DESCRIPTION"
-            echo "__EOF__"
-          } >> "$GITHUB_OUTPUT"
+          echo "$FIRMWARE_LIST" | python3 - << 'PYEOF'
+          import json, os, subprocess, sys, urllib.request, tempfile
 
-      - name: Download firmware
-        if: steps.check_release.outputs.exists == 'false'
-        run: |
-          VERSION="${{ steps.check_release.outputs.VERSION }}"
-          echo "Downloading firmware version $VERSION"
-          wget "https://download_aws.qidi3dprinter.com/QD_Q2/Q2_$VERSION.zip" -O firmware.zip
-          if [ ! -f "firmware.zip" ]; then
-            echo "Failed to download firmware file"
-            exit 1
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          data = json.loads(os.environ["FIRMWARE_LIST"])
 
-      - name: Create release
-        if: steps.check_release.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.VERSION }}
-          name: Firmware ${{ env.VERSION }}
-          body: |
-            ${{ steps.check_release.outputs.DESCRIPTION }}
-            
-            ---
-            
-            **Note:** The firmware.zip file is the property of QIDI Tech. Copyright © 2025 QIDI Tech All Rights Reserved.
-            
-            This repository only automates the distribution of official firmware releases.
-          files: firmware.zip
-          draft: false
-          prerelease: false
+          # Adjust this path based on actual API response shape
+          records = data.get("data", {}).get("records", []) or data.get("data", []) or []
+
+          if not records:
+              print("No firmware records found in response")
+              print("Raw response:", json.dumps(data, indent=2))
+              sys.exit(1)
+
+          for record in records:
+              version = record.get("versionCode") or record.get("version") or record.get("versionName")
+              download_url = record.get("downloadUrl") or record.get("fileUrl") or record.get("url")
+              description = (
+                  record.get("description", {}).get("en_US")
+                  or record.get("desc")
+                  or "Firmware update for QIDI Q2"
+              )
+
+              if not version or not download_url:
+                  print(f"Skipping record missing version or URL: {record}")
+                  continue
+
+              print(f"=== Checking {version} ===")
+
+              # Check if release already exists
+              result = subprocess.run(
+                  ["gh", "release", "view", version],
+                  capture_output=True
+              )
+              if result.returncode == 0:
+                  print(f"Release {version} already exists — skipping")
+                  continue
+
+              # Download firmware
+              print(f"Downloading {version} from {download_url}")
+              firmware_file = f"firmware_{version}.zip"
+              try:
+                  urllib.request.urlretrieve(download_url, firmware_file)
+              except Exception as e:
+                  print(f"Failed to download {version}: {e}")
+                  continue
+
+              if not os.path.exists(firmware_file) or os.path.getsize(firmware_file) == 0:
+                  print(f"Downloaded file is empty for {version}")
+                  continue
+
+              # Create release
+              notes = (
+                  f"{description}\n\n"
+                  "---\n\n"
+                  "**Note:** The firmware.zip file is the property of QIDI Tech. "
+                  "Copyright © QIDI Tech All Rights Reserved.\n\n"
+                  "This repository only automates the distribution of official firmware releases."
+              )
+
+              result = subprocess.run(
+                  ["gh", "release", "create", version, firmware_file,
+                   "--title", f"Firmware {version}",
+                   "--notes", notes],
+                  capture_output=True, text=True
+              )
+              if result.returncode == 0:
+                  print(f"Release {version} created successfully")
+              else:
+                  print(f"Failed to create release {version}: {result.stderr}")
+
+              os.remove(firmware_file)
+
+          PYEOF
